@@ -1,4 +1,5 @@
 
+$PROJECT_DIR
 
 # ALIGN READS USING BOWTIE2, PERFORMING DUPLICATE MARKING OF ALIGNED READS
 # USING SAMBLASTER
@@ -18,7 +19,7 @@ echo *_1.fq.gz | parallel -n1 'fasta interleave <(fasta simplify read ids $x) <(
 
 
 # ALIGNMENT STATISTICS
-cd ~/datasets/bladder_cfdna/panel_v1/alignments
+cd $PROJECT_DIR/panel_v1/alignments
 mkdir ../statistics
 echo *.bam | parallel -n10 'sam statistics --on-target=../baits_hg38.bed $x > ../statistics/${x/.bam/.general} && sam coverage histogram --regions=../baits_hg38.bed $x > ../statistics/${x/.bam/.coverage}'
 
@@ -35,15 +36,15 @@ plot_quality_metrics(samples)
 
 
 # IDENTIFY SOMATIC MUTATIONS AND GERMLINE VARIANTS
-cd ~/datasets/bladder_cfdna/alignments
+cd $PROJECT_DIR/alignments
 mkdir ../mutations
 echo X `seq 22` Y | parallel -n10 'mutato call2 --region=chr${x} --alt-reads=5 --alt-frac=0.02 ~/homo_sapiens/hg38.fa *.bam > ../mutations/chr${x}.vcf'
 
-cd ~/datasets/bladder_cfdna/mutations
+cd $PROJECT_DIR/mutations
 cat chr1.vcf <(cat chr{2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,X,Y}.vcf | grep -v CHROM) > variants.vcf
 
 # Generate list of tumor-normal pairs
-cd ~/datasets/bladder_cfdna
+cd $PROJECT_DIR
 samples = [replace(p, ".bam", "") for p in readdir("alignments") if endswith(p, ".bam")];
 germline = [s for s in samples if r"-(WBC|[Gg]ermline|[Bb]enign)" in s];
 patients = unique(replace.(germline, r"-(WBC|[Gg]ermline|[Bb]enign)", ""));
@@ -69,7 +70,7 @@ end
 close(out)
 
 # Somatic mutations (TERT promoter mutations use special thresholds)
-cd ~/datasets/bladder_cfdna/mutations
+cd $PROJECT_DIR/mutations
 variant nearby indels variants.vcf | variant somatic --alt-reads=10 --test-ref-ratio=3 --test-bg-ratio=25 --ref-reads=10 --min-sidedness=15 --min-mapq=10 - ../tumor_normal_pairs.txt | variant predict effect - | grep -v TERT > somatic.tmp
 variant inside variants.vcf chr5:1295113-1295135 | variant somatic --alt-reads=3 --alt-frac=0 --test-ref-ratio=0 --test-bg-ratio=0 --ref-reads=0 - ../tumor_normal_pairs.txt | variant predict effect - | tail -n +2 >> somatic.tmp    # TERT mutations
 cat <(variant protein altering somatic.tmp) <(variant protein altering --invert somatic.tmp | grep -v INDEL | tail -n +2) | sort -k1,1V -k2,2n | variant annotate - ~/homo_sapiens/cosmic_77_hg38.jls | variant annotate - ~/homo_sapiens/exac_0.3_hg38.jls | variant annotate - ~/homo_sapiens/kaviar_2016-02-04_hg38.jls | variant discard if frequency above - ~/homo_sapiens/exac_0.3_hg38.jls 0.005 | variant discard if frequency above - ~/homo_sapiens/kaviar_2016-02-04_hg38.jls 0.005 > somatic.vcf
@@ -87,11 +88,11 @@ variant group by snp profile hetz_snps.vcf > ../snp_profiles.txt
 
 
 # SUPPLEMENTARY TABLE: SOMATIC MUTATIONS
-cd ~/datasets/bladder_cfdna/mutations
+cd $PROJECT_DIR/mutations
 using Variant;
 vcf = read_vcf(`variant discard blacklisted somatic.vcf blacklist.tsv`);
 
-out = open("/home/annalam/supplementary_table.tsv", "w");
+out = open("supplementary_table.tsv", "w");
 function print_allele(row::Int, col::Int)
 	@printf(out, "\t%.1f%% (%d)%s", vcf.alt[row, col] / vcf.total[row, col] * 100, vcf.total[row, col], vcf.star[row, col] ? " *" : "")
 end
@@ -133,20 +134,20 @@ close(out)
 
 
 # ANALYZE COPY NUMBER ALTERATIONS (PANEL VERSION 1)
-cd ~/datasets/bladder_cfdna/panel_v1/alignments
+cd $PROJECT_DIR/panel_v1/alignments
 echo *.bam | parallel -n8 '[ ! -e ../coverage/${x/.bam/.tsv} ] && sam count $x ../baits_hg38.bed > ../coverage/${x/.bam/.tsv}'
 
-cd ~/datasets/bladder_cfdna/panel_v1/coverage
+cd $PROJECT_DIR/panel_v1/coverage
 copynum call targeted --controls=../cna_controls.txt --gc-fractions=../baits_hg38.gc --report-dir=~/tmp ../baits_hg38.bed ../tumor_normal_pairs.txt > ../gene_cna.tsv
 
 
 
 # ANALYZE COPY NUMBER ALTERATIONS (PANEL VERSION 2)
-cd ~/datasets/bladder_cfdna/panel_v2/alignments
+cd $PROJECT_DIR/panel_v2/alignments
 echo *.bam | parallel -n8 '[ ! -e ../coverage/${x/.bam/.tsv} ] && sam count $x ../baits_hg38.bed > ../coverage/${x/.bam/.tsv}'
 
 # Analyze cfDNA samples (panel version 2)
-cd ~/datasets/bladder_cfdna/panel_v2/coverage
+cd $PROJECT_DIR/panel_v2/coverage
 copynum call targeted --controls=../cna_controls.txt --gc-fractions=../baits_hg38.gc --report-dir=~/tmp ../baits_hg38.bed ../tumor_normal_pairs.txt > ../gene_cna.tsv
 
 
@@ -157,14 +158,14 @@ copynum call targeted --controls=../cna_controls.txt --gc-fractions=../baits_hg3
 
 
 # DETECT CHROMOSOMAL REARRANGEMENTS USING BREAKFAST
-cd ~/datasets/bladder_cfdna/alignments
+cd $PROJECT_DIR/alignments
 echo *.bam | parallel -n10 'breakfast detect --max-frag-len=1000 --anchor-len=30 $x ~/tools/bowtie-indexes/homo_sapiens/hg38 > ../rearrangements/original/${x/.bam/.sv}'
 
-cd ~/datasets/bladder_cfdna/rearrangements/original
+cd $PROJECT_DIR/rearrangements/original
 breakfast blacklist *-WBC.sv *enign*.sv > ../blacklist.txt
 echo *.sv | parallel -n10 'breakfast filter --merge-duplicates --min-reads=5 --blacklist=../blacklist.txt $x | breakfast annotate - ~/homo_sapiens/ensembl_84/genes.bed > ../annotated/${x}'
 
-cd ~/datasets/bladder_cfdna
+cd $PROJECT_DIR
 breakfast matrix --threads=20 <(cat rearrangements/annotated/*.sv) alignments/*.bam > rearrangements/counts.tsv
 
 
@@ -173,7 +174,7 @@ breakfast matrix --threads=20 <(cat rearrangements/annotated/*.sv) alignments/*.
 
 
 # SUPPLEMENTARY TABLE: SOMATIC REARRANGEMENTS
-cd ~/datasets/bladder_cfdna/rearrangements/annotated
+cd $PROJECT_DIR/rearrangements/annotated
 
 struct Rearrangement
 	sample::String
@@ -259,7 +260,7 @@ close(out)
 
 
 # ESTIMATE CTDNA FRACTION
-cd ~/datasets/bladder_cfdna/mutations
+cd $PROJECT_DIR/mutations
 clonality targeted --report-dir=~/ <(variant discard blacklisted somatic.vcf blacklist.tsv) ../tumor_normal_pairs.txt > ../ctdna_fractions.tsv
 
 
@@ -268,7 +269,7 @@ clonality targeted --report-dir=~/ <(variant discard blacklisted somatic.vcf bla
 
 
 # SUPPLEMENTARY TABLE: SOMATIC MUTATION BURDEN
-cd ~/datasets/bladder_cfdna
+cd $PROJECT_DIR
 variant discard blacklisted mutations/somatic.vcf mutations/blacklist.tsv | variant mutation rate --detailed -alt-reads=10 - coverage_histograms >> mutations/mutation_rate.tsv
 
 
@@ -286,10 +287,10 @@ variant discard blacklisted mutations/somatic.vcf mutations/blacklist.tsv | vari
 ##########################
 
 # ALIGNMENT STATISTICS
-cd ~/datasets/bladder_cfdna/wxs/alignments
+cd $PROJECT_DIR/wxs/alignments
 echo *.bam | parallel -n8 '[ ! -e ../statistics/${x/.bam/.general} ] && sam statistics $x > ../statistics/${x/.bam/.general} && sam coverage histogram --regions=/home/annalam/homo_sapiens/ensembl_84/cds.bed $x > ../statistics/${x/.bam/.coverage}'
 
-cd ~/datasets/bladder_cfdna/wxs/statistics
+cd $PROJECT_DIR/wxs/statistics
 using QualityMetrics
 samples = [replace(s, ".general", "") for s in readdir() if endswith(s, ".general")];
 plot_quality_metrics(samples)
@@ -305,15 +306,15 @@ plot_quality_metrics(samples)
 
 
 # IDENTIFY SOMATIC MUTATIONS AND GERMLINE VARIANTS IN WXS
-cd ~/datasets/bladder_cfdna/wxs/alignments
+cd $PROJECT_DIR/wxs/alignments
 mkdir ../mutations
 echo X `seq 22` Y | parallel -n10 'mutato call2 --region=chr${x} --alt-reads=5 --alt-frac=0.02 --min-mapq=0 ~/homo_sapiens/hg38.fa *.bam > ../mutations/chr${x}.vcf'
 
-cd ~/datasets/bladder_cfdna/wxs/mutations
+cd $PROJECT_DIR/wxs/mutations
 cat chr1.vcf <(cat chr{2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,X,Y}.vcf | grep -v 'CHROM') > variants.vcf
 
 # Generate list of tumor-normal pairs
-cd ~/datasets/bladder_cfdna/wxs
+cd $PROJECT_DIR/wxs
 samples = [replace(s, ".bam", "") for s in readdir("alignments")
 	if endswith(s, ".bam")];
 out = open("tumor_normal_pairs.txt", "w");
@@ -327,13 +328,13 @@ end
 close(out)
 
 # Somatic mutations
-cd ~/datasets/bladder_cfdna/wxs/mutations
+cd $PROJECT_DIR/wxs/mutations
 variant somatic --alt-reads=8 --alt-frac=0.05 --test-ref-ratio=5 --test-bg-ratio=30 --ref-reads=20 --min-sidedness=15 --min-mapq=10 variants.vcf ../tumor_normal_pairs.txt | variant predict effect - | variant protein altering - > somatic_protein_altering.tmp
 variant nearby indels variants.vcf | variant somatic --alt-reads=8 --alt-frac=0.10 --test-ref-ratio=10 --test-bg-ratio=50 --ref-reads=20 --min-sidedness=25 --min-mapq=30 - ../tumor_normal_pairs.txt | variant predict effect - | variant protein altering --invert - | variant discard sketchy silent - > somatic_silent.tmp
 cat somatic_protein_altering.tmp <(tail -n +2 somatic_silent.tmp) | sort -k1,1V -k2,2n | variant annotate - ~/homo_sapiens/cosmic_77_hg38.jls | variant annotate - ~/homo_sapiens/exac_0.3_hg38.jls | variant discard if frequency above - ~/homo_sapiens/exac_0.3_hg38.jls 0.005 > somatic.vcf
 
 # Germline variants
-cd ~/datasets/bladder_cfdna/wxs/mutations
+cd $PROJECT_DIR/wxs/mutations
 variant germline --alt-reads=5 --alt-frac=0.15 --bg-ratio=20 variants.vcf WBC | variant predict effect - | variant protein altering - | variant annotate - ~/homo_sapiens/exac_0.3_hg38.jls | variant discard if frequency above - ~/homo_sapiens/exac_0.3_hg38.jls 0.005 | variant annotate - ~/homo_sapiens/kaviar_2016-02-04_hg38.jls | variant discard if frequency above - ~/homo_sapiens/kaviar_2016-02-04_hg38.jls 0.005 | variant annotate - ~/homo_sapiens/cosmic_77_hg38.jls | variant annotate - ~/homo_sapiens/clinvar-2019-04-08_hg38.jls > germline.vcf
 
 
@@ -344,7 +345,7 @@ variant heterozygous snps --min-depth=50 variants.vcf 'WBC|enign' | variant disc
 
 
 # WHOLE EXOME COPY NUMBER ANALYSIS
-cd ~/datasets/bladder_cfdna/wxs/alignments
+cd $PROJECT_DIR/wxs/alignments
 mkdir ../coverage
 coverage grid ~/homo_sapiens/hg38.chrom.sizes 1000 > ../coverage/grid.bed
 echo *.bam | parallel -n8 '[ ! -e ../coverage/${x/.bam/.tsv} ] && sam count $x ../coverage/grid.bed > ../coverage/${x/.bam/.tsv}'
@@ -360,7 +361,7 @@ copynum call genomewide --snp-median-decimate=5 --gc-fractions=grid.gc --report-
 
 
 # FIT COPY NUMBER MODEL BASED ON LOGRATIOS
-cd ~/datasets/bladder_cfdna/wxs/igv_tracks
+cd $PROJECT_DIR/wxs/igv_tracks
 clonality try model T-001-1st-cfDNA_logratio.igv 0.3 -0.35
 
 
@@ -376,20 +377,20 @@ clonality try model T-001-1st-cfDNA_logratio.igv 0.3 -0.35
 ####################################
 
 # CREATE UNIFIED FOLDER CONTAINING TARGETED PANEL AND WXS SAMPLES
-cd ~/datasets/bladder_cfdna/panel/alignments
+cd $PROJECT_DIR/panel/alignments
 for x in *.bam*; do ln -sf ../panel/alignments/${x} ../../alignments/${x/.bam/-Panel.bam}; done
-cd ~/datasets/bladder_cfdna/wxs/alignments
+cd $PROJECT_DIR/wxs/alignments
 for x in *.bam*; do ln -sf ../wxs/alignments/${x} ../../alignments/${x/.bam/-WXS.bam}; done
 
 
 
 # CALL SOMATIC MUTATIONS
-cd ~/datasets/bladder_cfdna/alignments
+cd $PROJECT_DIR/alignments
 echo X `seq 22` Y | parallel -n12 'variant call --alt-reads=5 --alt-frac=0.01 --min-mapq=0 --region=chr${x} ~/homo_sapiens/hg38.fa *.bam > ../mutations/chr${x}.vcf'
 cat chr1.vcf <(cat chr{2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,X,Y}.vcf | grep -v 'CHROM') > variants.vcf
 
 # Generate list of tumor-normal pairs
-cd ~/datasets/bladder_cfdna/mutations
+cd $PROJECT_DIR/mutations
 line = readline(open("variants.vcf")); headers = split(rstrip(line), '\t');
 samples = headers[findone(headers .== "NOTES")+1:end];
 wxs_out = open("tumor_normal_pairs.wxs.txt", "w");
@@ -408,7 +409,7 @@ end
 close(wxs_out); close(panel_out);
 
 # Somatic mutations
-cd ~/datasets/bladder_cfdna/mutations
+cd $PROJECT_DIR/mutations
 variant nearby indels variants.vcf | variant somatic --alt-reads=10 --alt-frac=0.01 --test-ref-ratio=3 --test-bg-ratio=25 --ref-reads=10 - tumor_normal_pairs.panel.txt | variant somatic --keep-old-stars --alt-reads=8 --alt-frac=0.1 --test-ref-ratio=3 --test-bg-ratio=20 --ref-reads=15 - tumor_normal_pairs.wxs.txt | variant predict effect - | variant mappability - ~/homo_sapiens/mappability_170bp_hg38.jld 90 > somatic.tmp
 cat <(variant protein altering somatic.tmp) <(variant protein altering --invert somatic.tmp | tail -n +2 | grep -v INDEL | grep -v Mappability) | sort -k1,1V -k2,2n | variant annotate - ~/homo_sapiens/cosmic_77_hg38.jld | variant annotate - ~/homo_sapiens/exac_0.3_hg38.jld | variant discard if frequency above - ~/homo_sapiens/exac_0.3_hg38.jld 0.005 > somatic.vcf
 
@@ -423,7 +424,7 @@ cat <(variant protein altering somatic.tmp) <(variant protein altering --invert 
 
 
 # COMPARE MUTANT ALLELE FRACTIONS BETWEEN THE TWO PANELS
-cd ~/datasets/bladder_cfdna/mutations
+cd $PROJECT_DIR/mutations
 vcf = read_vcf(pipeline(`variant discard blacklisted somatic.vcf ../panel/mutations/blacklist.tsv`, `variant discard blacklisted - ../wxs/mutations/blacklist.tsv`));
 sample = "T-002-3rd";
 panel_s = findone(vcf.sample .== "$(sample)-cfDNA-Panel");
